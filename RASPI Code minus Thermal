@@ -12,7 +12,7 @@ ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
 time.sleep(2)
 
 # ============================
-# CAMERA SETUP (Original Working Version)
+# CAMERA SETUP 
 # ============================
 picam2 = Picamera2()
 config = picam2.create_preview_configuration()
