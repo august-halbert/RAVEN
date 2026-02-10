@@ -1,0 +1,77 @@
+// =========================
+// RAVEN MOTOR CONTROL v2.1
+// Default speed added for F commands
+// =========================
+
+const int PWM_PIN = 9;
+const int IN1 = 7;
+const int IN2 = 8;
+const int STBY = 6;
+
+int currentSpeed = 0;
+int direction = 0;
+
+void applyMotorOutput() {
+  if (direction == 1) {
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+  } else if (direction == -1) {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, HIGH);
+  } else {
+    digitalWrite(IN1, LOW);
+    digitalWrite(IN2, LOW);
+  }
+
+  analogWrite(PWM_PIN, currentSpeed);
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(PWM_PIN, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(STBY, OUTPUT);
+
+  digitalWrite(STBY, HIGH);
+
+  Serial.println("READY");
+}
+
+void loop() {
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+
+    Serial.print("CMD: ");
+    Serial.println(cmd);
+
+    if (cmd == "F1") {
+      direction = 1;
+      currentSpeed = 180;   // default speed
+      applyMotorOutput();
+      Serial.println("DIR: FORWARD");
+    }
+    else if (cmd == "F-1") {
+      direction = -1;
+      currentSpeed = 180;   // default speed
+      applyMotorOutput();
+      Serial.println("DIR: REVERSE");
+    }
+    else if (cmd == "F0") {
+      direction = 0;
+      currentSpeed = 0;
+      applyMotorOutput();
+      Serial.println("DIR: STOP");
+    }
+    else if (cmd.startsWith("S")) {
+      int val = cmd.substring(1).toInt();
+      val = constrain(val, 0, 255);
+      currentSpeed = val;
+      applyMotorOutput();
+      Serial.print("SPEED SET: ");
+      Serial.println(currentSpeed);
+    }
+  }
+}
