@@ -1,39 +1,59 @@
-// =========================
-// RAVEN MOTOR CONTROL v2.1
-// Default speed added for F commands
-// =========================
+// Motor A pins
+const int PWMA = 9;
+const int AIN1 = 7;
+const int AIN2 = 8;
 
-const int PWM_PIN = 9;
-const int IN1 = 7;
-const int IN2 = 8;
+// Motor B pins
+const int PWMB = 10;
+const int BIN1 = 4;
+const int BIN2 = 5;
+
 const int STBY = 6;
 
-int currentSpeed = 0;
-int direction = 0;
+int currentSpeed = 0;   // 0–255
+int direction = 0;      // 1 = forward, -1 = reverse, 0 = stop
 
 void applyMotorOutput() {
+  // Motor A (normal direction)
   if (direction == 1) {
-    digitalWrite(IN1, HIGH);
-    digitalWrite(IN2, LOW);
+    digitalWrite(AIN1, HIGH);
+    digitalWrite(AIN2, LOW);
   } else if (direction == -1) {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, HIGH);
+    digitalWrite(AIN1, LOW);
+    digitalWrite(AIN2, HIGH);
   } else {
-    digitalWrite(IN1, LOW);
-    digitalWrite(IN2, LOW);
+    digitalWrite(AIN1, LOW);
+    digitalWrite(AIN2, LOW);
   }
 
-  analogWrite(PWM_PIN, currentSpeed);
+  // Motor B (inverted direction)
+  if (direction == 1) {
+    digitalWrite(BIN1, LOW);
+    digitalWrite(BIN2, HIGH);
+  } else if (direction == -1) {
+    digitalWrite(BIN1, HIGH);
+    digitalWrite(BIN2, LOW);
+  } else {
+    digitalWrite(BIN1, LOW);
+    digitalWrite(BIN2, LOW);
+  }
+
+  analogWrite(PWMA, currentSpeed);
+  analogWrite(PWMB, currentSpeed);
 }
 
 void setup() {
   Serial.begin(115200);
 
-  pinMode(PWM_PIN, OUTPUT);
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(STBY, OUTPUT);
+  pinMode(PWMA, OUTPUT);
+  pinMode(AIN1, OUTPUT);
+  pinMode(AIN2, OUTPUT);
 
+  pinMode(PWMB, OUTPUT);
+  pinMode(BIN1, OUTPUT);
+  pinMode(BIN2, OUTPUT);
+
+  pinMode(STBY, OUTPUT);
   digitalWrite(STBY, HIGH);
 
   Serial.println("READY");
@@ -49,13 +69,13 @@ void loop() {
 
     if (cmd == "F1") {
       direction = 1;
-      currentSpeed = 180;   // default speed
+      currentSpeed = 180;
       applyMotorOutput();
       Serial.println("DIR: FORWARD");
     }
     else if (cmd == "F-1") {
       direction = -1;
-      currentSpeed = 180;   // default speed
+      currentSpeed = 180;
       applyMotorOutput();
       Serial.println("DIR: REVERSE");
     }
@@ -70,6 +90,7 @@ void loop() {
       val = constrain(val, 0, 255);
       currentSpeed = val;
       applyMotorOutput();
+
       Serial.print("SPEED SET: ");
       Serial.println(currentSpeed);
     }
