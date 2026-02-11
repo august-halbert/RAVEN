@@ -1,0 +1,213 @@
+import pygame
+import serial
+import time
+import os
+import sys
+import math
+
+import cv2
+import numpy as np
+from PIL import Image
+
+# Pi Camera imports
+from picamera2 import Picamera2
+from picamera2.encoders import H264Encoder
+from picamera2.outputs import FileOutput
+
+# Thermal Camera imports
+import board
+import busio
+import adafruit_mlx90640
+
+# SERIAL SETUP
+ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+time.sleep(2)
+
+# PI CAMERA SETUP (Simple Preview)
+picam2 = Picamera2()
+config = picam2.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
+picam2.configure(config)
+picam2.start()
+time.sleep(1)
+
+recording = False
+desktop_path = os.path.expanduser("~/Desktop")
+
+# THERMAL CAMERA SETUP
+i2c ===== busio.I2C(board.SCL, board.SDA, frequency=100000)
+mlx = adafruit_mlx90640.MLX90640(i2c)
+mlx.refresh_rate = adafruit_mlx90640.RefreshRate.REFRESH_2_HZ
+
+thermal_frame = [0] * 768  # 24x32 pixels
+
+
+def get_thermal_frame():
+    """Returns a processed thermal frame for OpenCV display."""
+    global thermal_frame
+
+    try:
+        mlx.getFrame(thermal_frame)
+    except Exception as e:
+        print("Thermal sensor error:", e)
+        return None
+
+    data = np.array(thermal_frame).reshape((24, 32))
+
+    min_temp = np.min(data)
+    max_temp = np.max(data)
+
+    if max_temp - min_temp == 0:
+        return None
+
+    norm = (data - min_temp) / (max_temp - min_temp)
+    norm = (norm * 255).astype(np.uint8)
+
+    img = Image.fromarray(norm)
+    img = img.resize((640, 480), Image.BICUBIC)
+
+    frame_cv = np.array(img)
+    frame_cv = cv2.applyColorMap(frame_cv, cv2.COLORMAP_INFERNO)
+    frame_cv = cv2.GaussianBlur(frame_cv, (7, 7), 0)
+
+    cv2.putText(
+        frame_cv,
+        f"Min: {min_temp:.1f}C  Max: {max_temp:.1f}C",
+        (10, 20),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (255, 255, 255),
+        1,
+        cv2.LINE_AA
+    )
+
+    return frame_cv
+
+# PYGAME / JOYSTICK SETUP
+pygame.init()
+pygame.joystick.init()
+
+if pygame.joystick.get_count() == 0:
+    print("ERROR: No joystick detected")
+    sys.exit()
+
+js = pygame.joystick.Joystick(0)
+js.init()
+
+print("Joystick connected:", js.get_name())
+print("System ready.")
+
+
+# BUTTON MAPPINGS
+BTN_PHOTO = 0
+BTN_VIDEO = 1
+BTN_PI_CAM = 2   # X
+BTN_THERMAL = 3  # Y
+BTN_ESTOP = 7    # e-stop
+
+# CAMERA MODE FLAGS
+MODE_PI = "pi"
+MODE_THERMAL = "thermal"
+camera_mode = MODE_PI  # start in Pi camera mode
+
+# SEND COMMAND TO ARDUINO
+def send(cmd):
+    ser.write((cmd + "\n").encode())
+    print("Sent:", cmd)
+
+# QUADRATIC E‑STOP
+def quadratic_stop(initial_speed):
+    duration = 1.0
+    steps = 20
+    dt = duration / steps
+
+    for i in range(steps + 1):
+        t = i * dt
+        factor = 1 - (t / duration) ** 2
+        new_speed = int(initial_speed * factor)
+
+        send(f"S{new_speed}")
+        time.sleep(dt)
+
+    send("F0")
+
+# MAIN LOOP
+last_cmd = None
+current_speed = 0
+
+cv2.namedWindow("Thermal Camera", cv2.WINDOW_NORMAL)
+
+while True:
+    for event in pygame.event.get():
+        if event.type == pygame.JOYBUTTONDOWN:
+
+            # E‑STOP
+            if event.button == BTN_ESTOP:
+                print("🚨 E‑STOP ACTIVATED")
+                quadratic_stop(current_speed)
+                last_cmd = "F0"
+                current_speed = 0
+                continue
+
+            # CAMERA SWITCHING
+            if event.button == BTN_PI_CAM:
+                camera_mode = MODE_PI
+                cv2.destroyWindow("Thermal Camera")
+                print("Switched to Pi Camera")
+
+            elif event.button == BTN_THERMAL:
+                camera_mode = MODE_THERMAL
+                print("Switched to Thermal Camera")
+
+            # PHOTO CAPTURE (Pi camera only)
+            elif event.button == BTN_PHOTO and camera_mode == MODE_PI:
+                filename = os.path.join(desktop_path, f"photo_{int(time.time())}.jpg")
+                picam2.capture_file(filename)
+                print("Photo saved:", filename)
+
+            # VIDEO RECORDING (Pi camera only)
+            elif event.button == BTN_VIDEO and camera_mode == MODE_PI:
+                if not recording:
+                    video_file = os.path.join(desktop_path, f"video_{int(time.time())}.h264")
+                    encoder = H264Encoder(bitrate=10000000)
+                    picam2.start_recording(encoder, FileOutput(video_file))
+                    recording = True
+                    print("Started recording:", video_file)
+                else:
+                    picam2.stop_recording()
+                    recording = False
+                    print("Stopped recording:", video_file)
+
+    # JOYSTICK → MOTOR CONTROL
+    y = js.get_axis(1)
+
+    if abs(y) < 0.2:
+        cmd = "F0"
+        current_speed = 0
+    elif y < -0.2:
+        cmd = "F1"
+        current_speed = 180
+    else:
+        cmd = "F-1"
+        current_speed = 180
+
+    if cmd != last_cmd:
+        send(cmd)
+        last_cmd = cmd
+
+    # CAMERA FEEDS
+    if camera_mode == MODE_PI:
+        # Pi camera preview is handled internally by Picamera2
+        pass
+
+    elif camera_mode == MODE_THERMAL:
+        frame = get_thermal_frame()
+        if frame is not None:
+            cv2.imshow("Thermal Camera", frame)
+            cv2.waitKey(1)
+
+    time.sleep(0.02)
+
+cv2.destroyAllWindows()
+pygame.quit()
+picam2.stop()
+ser.close()
